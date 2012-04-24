@@ -1,15 +1,15 @@
-name:               rehip
+name:               halt
 version:            0.1
 author:             Dan Rosén
 maintainer:         danr@student.gu.se
-synopsis:           Haskell Inductive Prover fuelled by GHC Core
+synopsis:           Haskell to Logic Translator - fuelled by GHC Core
 category:           Proving
 stability:          Experimental
 cabal-version:      >= 1.6
 build-type:         Simple
 homepage:           github.com/danr/hip
 
-executable          rehip
+executable          halt
     ghc-options:    -threaded -O2 -rtsopts -package ghc
 --    hs-source-dirs: src
     main-is:        Main.hs

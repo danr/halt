@@ -3,7 +3,7 @@ GHC        = ghc $(GHC_OPTS) --make
 TEST_OPTS  = +RTS -N4 -K32M -la -s
 EXECUTABLE = halt
 
-halt:
+halt:   Halt/*hs Main.hs
 	$(GHC) Main.hs -o $(EXECUTABLE)
 
 clean:
