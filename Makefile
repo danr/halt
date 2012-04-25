@@ -1,4 +1,4 @@
-GHC_OPTS   = -O -package ghc -hidir dist -odir dist
+GHC_OPTS   = -Wall -Werror -O -package ghc -hidir dist -odir dist
 GHC        = ghc $(GHC_OPTS) --make
 TEST_OPTS  = +RTS -N4 -K32M -la -s
 EXECUTABLE = halt
