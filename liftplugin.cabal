@@ -1,0 +1,23 @@
+name:               liftplugin
+version:            0.1
+author:             Dan Rosén
+maintainer:         danr@student.gu.se
+synopsis:           Lift Plugin
+category:           Plugin
+stability:          Experimental
+cabal-version:      >= 1.6
+build-type:         Simple
+homepage:           github.com/danr/hip
+
+library
+    ghc-options:     -O2 -package ghc
+    Exposed-modules: Halt.LiftPlugin
+    Other-modules:   Halt.Names
+                     Halt.Util
+                     Halt.Lift
+
+    build-depends: base          >= 4    && < 5
+                 , mtl           >= 2.0
+                 , ghc-paths     >= 0.1
+                 , containers    >= 0.3
+
