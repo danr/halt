@@ -4,6 +4,7 @@ module Main where
 -- compile with
 -- ghc -package ghc Main.hs
 
+import BasicTypes
 import CoreMonad
 import CoreSyn
 import DynFlags
@@ -11,6 +12,7 @@ import FloatOut
 import GHC
 import GHC.Paths
 import HscTypes
+import TysWiredIn
 import Outputable
 import SimplCore
 import UniqSupply
@@ -18,6 +20,7 @@ import UniqSupply
 import Halt.Trans
 import Halt.Lift
 import Halt.Conf
+import Halt.Monad
 
 import FOL.Pretty
 
@@ -67,6 +70,11 @@ main = do
     us <- mkSplitUniqSupply 'f'
     let core_binds = mg_binds modguts
         ty_cons    = mg_tcs modguts
+        ty_cons_with_builtin :: [TyCon]
+        ty_cons_with_builtin = listTyCon : boolTyCon : unitTyCon
+                             : map (tupleTyCon BoxedTuple) [2..4]
+                               -- ^ choice: only tuples up to 4 supported
+                             ++ ty_cons
         halt_conf  = sanitizeConf $ HaltConf
                         { use_cnf      = "-cnf" `elem` opts
                         , inline_projs = True
@@ -74,7 +82,8 @@ main = do
                         , common_min   = "-common-min" `elem` opts
                         }
         ((lifted_prog,msgs_lift),us') = caseLetLift floated_prog us
-        (tptp,msgs_trans)             = translate us' halt_conf ty_cons lifted_prog
+        (halt_env,us'')               = mkInitEnv us' halt_conf ty_cons_with_builtin lifted_prog
+        (tptp,msgs_trans)             = translate halt_env ty_cons_with_builtin lifted_prog
 
         printSrc = do
             putStrLn $ "Original file, " ++ file ++ ":\n"
