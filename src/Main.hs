@@ -81,9 +81,9 @@ main = do
                         , use_min      = "-no-min" `notElem` opts
                         , common_min   = "-common-min" `elem` opts
                         }
-        ((lifted_prog,msgs_lift),us') = caseLetLift floated_prog us
-        (halt_env,us'')               = mkInitEnv us' halt_conf ty_cons_with_builtin lifted_prog
-        (tptp,msgs_trans)             = translate halt_env ty_cons_with_builtin lifted_prog
+        ((lifted_prog,msgs_lift),_us) = caseLetLift floated_prog us
+        halt_env          = mkEnv halt_conf ty_cons_with_builtin lifted_prog
+        (tptp,msgs_trans) = translate halt_env ty_cons_with_builtin lifted_prog
 
         printSrc = do
             putStrLn $ "Original file, " ++ file ++ ":\n"
