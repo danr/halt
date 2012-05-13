@@ -6,6 +6,7 @@ module Main where
 
 import BasicTypes
 import CoreMonad
+import CoreSubst (simpleOptExpr)
 import CoreSyn
 import DynFlags
 import FloatOut
@@ -14,7 +15,6 @@ import GHC.Paths
 import HscTypes
 import TysWiredIn
 import Outputable
-import SimplCore
 import UniqSupply
 
 import Halt.Trans
@@ -22,23 +22,25 @@ import Halt.Lift
 import Halt.Conf
 import Halt.Monad
 
+import Contracts.Make
+
 import FOL.Pretty
 
 import Control.Monad
 import System.Environment
+import System.Exit
 
-desugar :: FilePath -> IO (ModGuts,[CoreBind])
-desugar targetFile =
+desugar :: Bool -> FilePath -> IO (ModGuts,[CoreBind])
+desugar debug_float_out targetFile =
   defaultErrorHandler defaultLogAction $
     {- defaultCleanupHandler defaultDynFlags $ -} do
       runGhc (Just libdir) $ do
         dflags <- getSessionDynFlags
-        let dflags' = foldl dopt_set dflags
-                            [Opt_CaseMerge
-                            ,Opt_FloatIn
-                            ,Opt_CSE
-                            ,Opt_StaticArgumentTransformation
-                            ]
+        let dflags'
+              | debug_float_out = foldl dopt_set dflags [Opt_D_dump_simpl_stats
+                                                        ,Opt_D_verbose_core2core]
+              | otherwise = dflags
+
         void $ setSessionDynFlags dflags'
         target <- guessTarget targetFile Nothing
         setTargets [target]
@@ -47,26 +49,25 @@ desugar targetFile =
         p <- parseModule modSum
         t <- typecheckModule p
         d <- desugarModule t
-        -- ^ take that
         let modguts = dm_core_module d
-        s <- getSession
-        modguts' <- liftIO (core2core s modguts)
-        let coreBinds = mg_binds modguts'
+            simpleOpt (NonRec v e) = NonRec v (simpleOptExpr e)
+            simpleOpt (Rec vses)   = Rec [ (v,simpleOptExpr e) | (v,e) <- vses ]
+            coreBinds = map simpleOpt (mg_binds modguts)
             float_switches = FloatOutSwitches
                                { floatOutLambdas = Just 100
                                , floatOutConstants = False
-                               , floatOutPartialApplications = False
+                               , floatOutPartialApplications = True
                                }
         us <- liftIO (mkSplitUniqSupply 'l')
            -- ^ Make a UniqSupply out of thin air. Trying char 'l'
         floatedProg <- liftIO (floatOutwards float_switches dflags' us coreBinds)
-        return (modguts',floatedProg)
+        return (modguts,floatedProg)
 
 main :: IO ()
 main = do
     file:opts <- getArgs
     let flagged x = when (x `elem` opts)
-    (modguts,floated_prog) <- desugar file
+    (modguts,floated_prog) <- desugar ("-debug-float-out" `elem` opts) file
     us <- mkSplitUniqSupply 'f'
     let core_binds = mg_binds modguts
         ty_cons    = mg_tcs modguts
@@ -102,7 +103,6 @@ main = do
 
     flagged ("-origcore") (printCore "Original core" core_binds)
 
-
     flagged ("-lamlift") (printCore "Lambda lifted core" floated_prog)
 
     flagged ("-dbcaseletlift") (printMsgs msgs_lift)
@@ -111,4 +111,14 @@ main = do
     flagged ("-src") printSrc
 
     flagged ("-dbtptp") (printMsgs msgs_trans)
+
+    flagged ("-contracts") $ do
+        us' <- mkSplitUniqSupply 'c'
+        let ((r,msgs),_us') = collectContracts us core_binds
+        mapM_ putStrLn msgs
+        case r of
+          Right (cs,bs) -> mapM_ print cs
+          Left err      -> putStrLn err
+        exitSuccess
+
     unless ("-no-tptp" `elem` opts) (endl >> outputTPTP tptp >> endl)
