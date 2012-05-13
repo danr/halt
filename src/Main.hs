@@ -23,6 +23,7 @@ import Halt.Conf
 import Halt.Monad
 
 import Contracts.Make
+import Contracts.Trans
 
 import FOL.Pretty
 
@@ -30,7 +31,7 @@ import Control.Monad
 import System.Environment
 import System.Exit
 
-desugar :: Bool -> FilePath -> IO (ModGuts,[CoreBind])
+desugar :: Bool -> FilePath -> IO (ModGuts,DynFlags)
 desugar debug_float_out targetFile =
   defaultErrorHandler defaultLogAction $
     {- defaultCleanupHandler defaultDynFlags $ -} do
@@ -50,27 +51,43 @@ desugar debug_float_out targetFile =
         t <- typecheckModule p
         d <- desugarModule t
         let modguts = dm_core_module d
-            simpleOpt (NonRec v e) = NonRec v (simpleOptExpr e)
-            simpleOpt (Rec vses)   = Rec [ (v,simpleOptExpr e) | (v,e) <- vses ]
-            coreBinds = map simpleOpt (mg_binds modguts)
-            float_switches = FloatOutSwitches
-                               { floatOutLambdas = Just 100
-                               , floatOutConstants = False
-                               , floatOutPartialApplications = True
-                               }
-        us <- liftIO (mkSplitUniqSupply 'l')
-           -- ^ Make a UniqSupply out of thin air. Trying char 'l'
-        floatedProg <- liftIO (floatOutwards float_switches dflags' us coreBinds)
-        return (modguts,floatedProg)
+        return (modguts,dflags')
+
+lambdaLift :: DynFlags -> CoreProgram -> IO CoreProgram
+lambdaLift dflags program = do
+    us <- mkSplitUniqSupply 'l'
+    floatOutwards float_switches dflags us (map simpleOpt program)
+  where
+    simpleOpt (NonRec v e) = NonRec v (simpleOptExpr e)
+    simpleOpt (Rec vses)   = Rec [ (v,simpleOptExpr e) | (v,e) <- vses ]
+
+    float_switches = FloatOutSwitches
+                      { floatOutLambdas = Just 100
+                      , floatOutConstants = False
+                      , floatOutPartialApplications = True
+                      }
 
 main :: IO ()
 main = do
     file:opts <- getArgs
     let flagged x = when (x `elem` opts)
-    (modguts,floated_prog) <- desugar ("-debug-float-out" `elem` opts) file
-    us <- mkSplitUniqSupply 'f'
+    (modguts,dflags) <- desugar ("-debug-float-out" `elem` opts) file
     let core_binds = mg_binds modguts
-        ty_cons    = mg_tcs modguts
+
+    (program,m_contr) <-
+         if "-contracts" `elem` opts
+             then do us <- mkSplitUniqSupply 'c'
+                     let ((r,msgs),_us') = collectContracts us core_binds
+                     mapM_ putStrLn msgs
+                     case r of
+                          Right (cs,bs) -> mapM_ print cs >> return (bs,Just cs)
+                          Left err      -> putStrLn err >> exitFailure
+             else return (core_binds,Nothing)
+
+    floated_prog <- lambdaLift dflags program
+    us <- mkSplitUniqSupply 'f'
+
+    let ty_cons    = mg_tcs modguts
         ty_cons_with_builtin :: [TyCon]
         ty_cons_with_builtin = listTyCon : boolTyCon : unitTyCon
                              : map (tupleTyCon BoxedTuple) [2..4]
@@ -112,13 +129,8 @@ main = do
 
     flagged ("-dbtptp") (printMsgs msgs_trans)
 
-    flagged ("-contracts") $ do
-        us' <- mkSplitUniqSupply 'c'
-        let ((r,msgs),_us') = collectContracts us core_binds
-        mapM_ putStrLn msgs
-        case r of
-          Right (cs,bs) -> mapM_ print cs
-          Left err      -> putStrLn err
-        exitSuccess
+    case m_contr of
+        Nothing -> unless ("-no-tptp" `elem` opts) (endl >> outputTPTP tptp >> endl)
+        Just cs -> forM_ cs ((>> endl) . outputTPTP . fst
+                            . runHaltM halt_env . trStatement)
 
-    unless ("-no-tptp" `elem` opts) (endl >> outputTPTP tptp >> endl)
