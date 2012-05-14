@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 module Main where
 
 -- (c) Dan Rosén 2012
@@ -24,8 +25,9 @@ import Halt.Monad
 
 import Contracts.Make
 import Contracts.Trans
+import Contracts.Types
 
-import FOL.Pretty
+import FOL.LinTPTP
 
 import Control.Monad
 import System.Environment
@@ -74,14 +76,16 @@ main = do
     (modguts,dflags) <- desugar ("-debug-float-out" `elem` opts) file
     let core_binds = mg_binds modguts
 
-    (program,m_contr) <-
+    (program,m_stmts) <-
          if "-contracts" `elem` opts
              then do us <- mkSplitUniqSupply 'c'
                      let ((r,msgs),_us') = collectContracts us core_binds
-                     mapM_ putStrLn msgs
+                     flagged "-dbmkcontr" (mapM_ putStrLn msgs)
                      case r of
-                          Right (cs,bs) -> mapM_ print cs >> return (bs,Just cs)
-                          Left err      -> putStrLn err >> exitFailure
+                          Right (stmts,bs) -> do flagged "-dbmkcontr" (mapM_ print stmts)
+                                                 return (bs,Just stmts)
+                          Left err         -> do putStrLn err
+                                                 exitFailure
              else return (core_binds,Nothing)
 
     floated_prog <- lambdaLift dflags program
@@ -98,6 +102,7 @@ main = do
                         , inline_projs = True
                         , use_min      = "-no-min" `notElem` opts
                         , common_min   = "-common-min" `elem` opts
+                        , unr_and_bad  = True
                         }
         ((lifted_prog,msgs_lift),_us) = caseLetLift floated_prog us
         halt_env          = mkEnv halt_conf ty_cons_with_builtin lifted_prog
@@ -116,21 +121,27 @@ main = do
             mapM_ (printDump . ppr) core
             endl
 
-    flagged ("-src-before") printSrc
+    flagged "-src-before" printSrc
 
-    flagged ("-origcore") (printCore "Original core" core_binds)
+    flagged "-origcore" (printCore "Original core" core_binds)
 
-    flagged ("-lamlift") (printCore "Lambda lifted core" floated_prog)
+    flagged "-lamlift" (printCore "Lambda lifted core" floated_prog)
 
-    flagged ("-dbcaseletlift") (printMsgs msgs_lift)
-    flagged ("-caseletlift")   (printCore "Case/let lifted core" lifted_prog)
+    flagged "-dbcaseletlift" (printMsgs msgs_lift)
+    flagged "-caseletlift"   (printCore "Case/let lifted core" lifted_prog)
 
-    flagged ("-src") printSrc
+    flagged "-src" printSrc
 
-    flagged ("-dbtptp") (printMsgs msgs_trans)
+    flagged "-dbtptp" (printMsgs msgs_trans)
 
-    case m_contr of
-        Nothing -> unless ("-no-tptp" `elem` opts) (endl >> outputTPTP tptp >> endl)
-        Just cs -> forM_ cs ((>> endl) . outputTPTP . fst
-                            . runHaltM halt_env . trStatement)
+    case m_stmts of
+        Nothing -> do
+             unless ("-no-tptp" `elem` opts) (endl >> outputTPTP tptp >> endl)
+        Just stmts -> forM_ stmts $ \stmt@(Statement{..}) -> do
+             let (tr_contract,msgs_tr_contr) = runHaltM halt_env (trStatement stmt)
+             flagged "-dbtrcontr" (printMsgs msgs_tr_contr)
+             print statement_name
+             outputTPTP (tr_contract)
+             endl
+             writeTPTP (show statement_name ++ ".tptp") (tptp ++ tr_contract)
 
