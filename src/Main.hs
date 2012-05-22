@@ -24,6 +24,7 @@ import Halt.Conf
 import Halt.Monad
 import Halt.FOL.Linearise
 import Halt.FOL.Style
+import Halt.FOL.Rename
 
 import Contracts.Make
 import Contracts.Trans
@@ -100,9 +101,11 @@ main = do
                                -- ^ choice: only tuples of size 2 supported!!
                              ++ ty_cons
 
+        cnf = "-cnf" `elem` opts
+
         halt_conf :: HaltConf
         halt_conf  = sanitizeConf $ HaltConf
-                        { use_cnf      = "-cnf" `elem` opts
+                        { use_cnf      = cnf
                         , inline_projs = True
                         , use_min      = "-no-min" `notElem` opts
                         , common_min   = "-common-min" `elem` opts
@@ -145,23 +148,17 @@ main = do
     case m_stmts of
         Nothing -> do
              unless ("-no-tptp" `elem` opts) $ do
-                 endl
-                 putStrLn $ linTPTP axStyle data_axioms
-                 endl
-                 putStrLn $ linTPTP varStyle def_axioms
-                 endl
+                 let tptp = linTPTP (strStyle cnf)
+                                    (renameClauses data_axioms def_axioms)
+                 putStrLn $ tptp
 
         Just stmts -> forM_ stmts $ \stmt@(Statement{..}) -> do
              let (tr_contract,msgs_tr_contr) = runHaltM halt_env (trStatement stmt)
              flagged "-dbtrcontr" (printMsgs msgs_tr_contr)
              print statement_name
-             putStrLn $ linTPTP varStyle tr_contract
-             endl
-             putStrLn $ linTPTP axStyle data_axioms
-             endl
-             putStrLn $ linTPTP varStyle def_axioms
-             endl
-             writeFile (show statement_name ++ ".tptp") $
-                  linTPTP axStyle data_axioms ++ "\n" ++
-                  linTPTP varStyle (def_axioms ++ tr_contract) ++ "\n"
+             let tptp = linTPTP (strStyle cnf)
+                                (renameClauses data_axioms
+                                               (def_axioms ++ tr_contract))
+             putStrLn $ tptp
+             writeFile (show statement_name ++ ".tptp") tptp
 
