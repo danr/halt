@@ -2,6 +2,7 @@
 module Halt.FOL.Abstract
        (VarTerm,VarFormula,VarClause
        ,AxTerm,AxFormula,AxClause
+       ,StrClause
 
        ,fun,fun0
        ,con,con0
@@ -42,6 +43,8 @@ type AxTerm     = Term    Int Var
 type AxFormula  = Formula Int Var
 type AxClause   = Clause  Int Var
 
+type StrClause  = Clause String String
+
 fun :: v -> [Term q v] -> Term q v
 fun = Fun
 
@@ -72,29 +75,6 @@ qvar = QVar
 ptr :: v -> Term q v
 ptr = Ptr
 
-type Literal q v = Formula q v
-
-isLiteral :: Formula q v -> Bool
-isLiteral f = case f of
-    Equal{}     -> True
-    Unequal{}   -> True
-    Or{}        -> False
-    And{}       -> False
-    Implies{}   -> False
-    (Neg Neg{}) -> False
-    (Neg x)     -> isLiteral x
-    Forall{}    -> False
-    Exists{}    -> False
-    CF{}        -> True
-    Min{}       -> True
-
--- | Can this formula be written simply in CNF?
-simpleCNF :: Formula q v -> Maybe [Literal q v]
-simpleCNF (Forall _ f)               = simpleCNF f
-simpleCNF (Implies f1 f2)            = simpleCNF (neg f1 \/ f2)
-simpleCNF (Or fs) | all isLiteral fs = Just fs
-simpleCNF f       | isLiteral f      = Just [f]
-simpleCNF _                          = Nothing
 
 infix 4 ===
 infix 4 =/=
@@ -166,4 +146,26 @@ min' = Min
 cf :: Term q v -> Formula q v
 cf = CF
 
+type Literal q v = Formula q v
 
+isLiteral :: Formula q v -> Bool
+isLiteral f = case f of
+    Equal{}     -> True
+    Unequal{}   -> True
+    Or{}        -> False
+    And{}       -> False
+    Implies{}   -> False
+    (Neg Neg{}) -> False
+    (Neg x)     -> isLiteral x
+    Forall{}    -> False
+    Exists{}    -> False
+    CF{}        -> True
+    Min{}       -> True
+
+-- | Can this formula be written simply in CNF?
+simpleCNF :: Formula q v -> Maybe [Literal q v]
+simpleCNF (Forall _ f)               = simpleCNF f
+simpleCNF (Implies f1 f2)            = simpleCNF (neg f1 \/ f2)
+simpleCNF (Or fs) | all isLiteral fs = Just fs
+simpleCNF f       | isLiteral f      = Just [f]
+simpleCNF _                          = Nothing

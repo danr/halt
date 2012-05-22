@@ -4,7 +4,7 @@ module Halt.FOL.Internals.Internals where
 import Halt.PrimCon
 import Data.Data
 
--- Only Halt.FOL.Abstract and Halt.FOL.Linearise should use this module!
+-- Only files under Halt.FOL should use this module!
 
 -- | Terms describing expressions, parameterised over
 --   the variables a
@@ -14,7 +14,9 @@ import Data.Data
 --     q : the quantified variables
 --         This will typically be GHC's Var or String
 --
---  Note that other prims can be made by Fun and an empty list of arguments
+--  Note that other constants can be made by Fun and an empty list of
+--  arguments (fun0 in Halt.FOL.Abstract)
+
 data Term q v
     = Fun v [Term q v]
     | Con v [Term q v]

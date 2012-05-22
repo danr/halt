@@ -9,22 +9,23 @@ import Halt.FOL.Linearise
 
 import Data.Char
 
-stringStyle :: Style String String
-stringStyle = Style
-    { linVar  = text . prettyName
+strStyle :: Bool -> Style String String
+strStyle cnf = Style
+    { linVar  = text
     , linQVar = text
     , linApp  = text "app"
     , linMin  = text "min"
     , linCF   = text "cf"
     , linProj = \i n -> text (n ++ "_" ++ show i)
-    , linPtr  = text . (++ ".ptr")
-    , linCNF  = False
+    , linPtr  = text . (++ "_ptr")
+    , linCNF  = cnf
     , linConstant = text . show
     , linComments = True
     }
 
-varStyle :: Style Var Var
-varStyle = Style
+{-
+varStyle :: Bool -> Style Var Var
+varStyle cnf = Style
     { linVar  = text . prettyName . lower . showSDoc . ppr . maybeLocaliseName . idName
     , linQVar = text . capInit . showSDoc . ppr . maybeLocaliseName . idName
     , linApp  = text "app"
@@ -32,13 +33,13 @@ varStyle = Style
     , linCF   = text "cf"
     , linProj = \i -> text . prettyName . (++  "_" ++ show i) . lower . showSDoc . ppr . localiseName . idName
     , linPtr  = text . prettyName . (++ ".ptr") . showSDoc . ppr
-    , linCNF  = False
+    , linCNF  = cnf
     , linConstant = text . show
     , linComments = True
     }
 
-axStyle :: Style Int Var
-axStyle = Style
+axStyle :: Bool -> Style Int Var
+axStyle cnf = Style
     { linVar  = text . prettyName . lower . showSDoc . ppr . maybeLocaliseName . idName
     , linQVar = text . ("X" ++) . show
     , linApp  = text "app"
@@ -46,7 +47,7 @@ axStyle = Style
     , linCF   = text "cf"
     , linProj = \i -> text . prettyName . (++  "_" ++ show i) . lower . showSDoc . ppr . localiseName . idName
     , linPtr  = text . prettyName . (++ ".ptr") . showSDoc . ppr
-    , linCNF  = False
+    , linCNF  = cnf
     , linConstant = text . show
     , linComments = True
     }
@@ -62,4 +63,4 @@ capInit "" = "Q"
 
 lower :: String -> String
 lower = map toLower
-
+-}
