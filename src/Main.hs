@@ -22,12 +22,12 @@ import Halt.Trans
 import Halt.Lift
 import Halt.Conf
 import Halt.Monad
+import Halt.LineariseFOL
+import Halt.LinStyle
 
 import Contracts.Make
 import Contracts.Trans
 import Contracts.Types
-
-import FOL.LinTPTP
 
 import Control.Monad
 import System.Environment
@@ -91,12 +91,16 @@ main = do
     floated_prog <- lambdaLift dflags program
     us <- mkSplitUniqSupply 'f'
 
-    let ty_cons    = mg_tcs modguts
+    let ty_cons :: [TyCon]
+        ty_cons = mg_tcs modguts
+
         ty_cons_with_builtin :: [TyCon]
         ty_cons_with_builtin = listTyCon : boolTyCon : unitTyCon
-                             : map (tupleTyCon BoxedTuple) [2..4]
-                               -- ^ choice: only tuples up to 4 supported
+                             : map (tupleTyCon BoxedTuple) [2..2]
+                               -- ^ choice: only tuples of size 2 supported!!
                              ++ ty_cons
+
+        halt_conf :: HaltConf
         halt_conf  = sanitizeConf $ HaltConf
                         { use_cnf      = "-cnf" `elem` opts
                         , inline_projs = True
@@ -104,9 +108,13 @@ main = do
                         , common_min   = "-common-min" `elem` opts
                         , unr_and_bad  = True
                         }
+
         ((lifted_prog,msgs_lift),_us) = caseLetLift floated_prog us
-        halt_env          = mkEnv halt_conf ty_cons_with_builtin lifted_prog
-        (tptp,msgs_trans) = translate halt_env ty_cons_with_builtin lifted_prog
+
+        halt_env = mkEnv halt_conf ty_cons_with_builtin lifted_prog
+
+        (data_axioms,def_axioms,msgs_trans)
+            = translate halt_env ty_cons_with_builtin lifted_prog
 
         printSrc = do
             putStrLn $ "Original file, " ++ file ++ ":\n"
@@ -136,12 +144,24 @@ main = do
 
     case m_stmts of
         Nothing -> do
-             unless ("-no-tptp" `elem` opts) (endl >> outputTPTP tptp >> endl)
+             unless ("-no-tptp" `elem` opts) $ do
+                 endl
+                 putStrLn $ linTPTP axStyle data_axioms
+                 endl
+                 putStrLn $ linTPTP varStyle def_axioms
+                 endl
+
         Just stmts -> forM_ stmts $ \stmt@(Statement{..}) -> do
              let (tr_contract,msgs_tr_contr) = runHaltM halt_env (trStatement stmt)
              flagged "-dbtrcontr" (printMsgs msgs_tr_contr)
              print statement_name
-             outputTPTP (tr_contract)
+             putStrLn $ linTPTP varStyle tr_contract
              endl
-             writeTPTP (show statement_name ++ ".tptp") (tptp ++ tr_contract)
+             putStrLn $ linTPTP axStyle data_axioms
+             endl
+             putStrLn $ linTPTP varStyle def_axioms
+             endl
+             writeFile (show statement_name ++ ".tptp") $
+                  linTPTP axStyle data_axioms ++ "\n" ++
+                  linTPTP varStyle (def_axioms ++ tr_contract) ++ "\n"
 
