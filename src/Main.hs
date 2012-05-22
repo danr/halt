@@ -22,8 +22,8 @@ import Halt.Trans
 import Halt.Lift
 import Halt.Conf
 import Halt.Monad
-import Halt.LineariseFOL
-import Halt.LinStyle
+import Halt.FOL.Linearise
+import Halt.FOL.Style
 
 import Contracts.Make
 import Contracts.Trans
