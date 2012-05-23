@@ -4,8 +4,11 @@ module Halt.FOL.Abstract
        ,AxTerm,AxFormula,AxClause
        ,StrClause
 
+       ,apply,con
+
        ,fun,fun0
-       ,con,con0
+       ,ctor,ctor0
+
        ,constant
        ,app,apps
        ,proj
@@ -35,6 +38,7 @@ import Halt.FOL.Internals.Internals
 import Halt.PrimCon
 
 import Var
+import Id
 
 type VarTerm    = Term    Var Var
 type VarFormula = Formula Var Var
@@ -45,17 +49,31 @@ type AxClause   = Clause  Int Var
 
 type StrClause  = Clause String String
 
+-- | Figure out if this var is one of the primitive constants, or if
+--   it is a data constructor or a function, and make a term accordingly.
+apply :: Var -> [Term q Var] -> Term q Var
+apply x as
+    | Just c <- lookup x primCons = apps (Constant c) as
+    | isConLikeId x               = Ctor x as
+    | otherwise                   = Fun x as
+  where
+    primCons = [(primId c,c) | c <- [minBound..maxBound]]
+
+-- | Make a term of this primitive constant, constructor or CAF.
+con :: Var -> Term q Var
+con x = apply x []
+
 fun :: v -> [Term q v] -> Term q v
 fun = Fun
 
 fun0 :: v -> Term q v
 fun0 a = Fun a []
 
-con :: v -> [Term q v] -> Term q v
-con = Con
+ctor :: v -> [Term q v] -> Term q v
+ctor = Ctor
 
-con0 :: v -> Term q v
-con0 a = Con a []
+ctor0 :: v -> Term q v
+ctor0 a = Ctor a []
 
 constant :: PrimCon -> Term q v
 constant = Constant
@@ -74,7 +92,6 @@ qvar = QVar
 
 ptr :: v -> Term q v
 ptr = Ptr
-
 
 infix 4 ===
 infix 4 =/=

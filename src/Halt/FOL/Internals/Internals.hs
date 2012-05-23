@@ -19,7 +19,7 @@ import Data.Data
 
 data Term q v
     = Fun v [Term q v]
-    | Con v [Term q v]
+    | Ctor v [Term q v]
     | App (Term q v) (Term q v)
     | Proj Int v (Term q v)
     | Ptr v

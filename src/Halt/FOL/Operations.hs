@@ -8,14 +8,11 @@ import Data.Generics.Uniplate.Data
 import Data.Data
 import Data.Maybe
 
-import Data.Map (Map)
-import qualified Data.Map as M
-
 replaceVarsTm :: (v -> u) -> Term q v -> Term q u
 replaceVarsTm k = go
   where go tm = case tm of
              Fun v as   -> Fun (k v) (map go as)
-             Con v as   -> Con (k v) (map go as)
+             Ctor v as  -> Ctor (k v) (map go as)
              App t1 t2  -> App (go t1) (go t2)
              Proj i v a -> Proj i (k v) (go a)
              Ptr v      -> Ptr (k v)
@@ -26,7 +23,7 @@ replaceQVarsTm :: (q -> r) -> Term q v -> Term r v
 replaceQVarsTm k = go
   where go tm = case tm of
              Fun v as   -> Fun v (map go as)
-             Con v as   -> Con v (map go as)
+             Ctor v as  -> Ctor v (map go as)
              App t1 t2  -> App (go t1) (go t2)
              Proj i v a -> Proj i v (go a)
              Ptr v      -> Ptr v
@@ -42,6 +39,7 @@ formulaMapTerms tm qv = go
              And fs        -> And (map go fs)
              Or fs         -> Or (map go fs)
              Implies f1 f2 -> Implies (go f1) (go f2)
+             Neg f'        -> Neg (go f')
              Forall qs f'  -> Forall (map qv qs) (go f')
              Exists qs f'  -> Forall (map qv qs) (go f')
              CF t          -> CF (tm t)
@@ -58,7 +56,7 @@ allSymbols = nubOrd . mapMaybe get . universeBi
   where
     get :: Term q v -> Maybe v
     get (Fun v _)    = Just v
-    get (Con v _)    = Just v
+    get (Ctor v _)   = Just v
     get (Proj _ v _) = Just v
     get (Ptr v)      = Just v
     get _            = Nothing
@@ -76,7 +74,7 @@ substVars old new = rewriteBi s
   where
     s :: Term q v -> Maybe (Term q v)
     s (Fun v as)   | v == old = Just (Fun new as)
-    s (Con v as)   | v == old = Just (Con new as)
+    s (Ctor v as)  | v == old = Just (Ctor new as)
     s (Proj i v a) | v == old = Just (Proj i new a)
     s (Ptr v)      | v == old = Just (Ptr new)
     s _                       = Nothing

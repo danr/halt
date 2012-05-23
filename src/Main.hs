@@ -24,6 +24,7 @@ import Halt.Conf
 import Halt.Monad
 import Halt.FOL.Linearise
 import Halt.FOL.Style
+import Halt.FOL.Rename
 
 import Contracts.Make
 import Contracts.Trans
@@ -147,23 +148,17 @@ main = do
     case m_stmts of
         Nothing -> do
              unless ("-no-tptp" `elem` opts) $ do
-                 endl
-                 putStrLn $ linTPTP (axStyle cnf) data_axioms
-                 endl
-                 putStrLn $ linTPTP (varStyle cnf) def_axioms
-                 endl
+                 let tptp = linTPTP (strStyle cnf)
+                                    (renameClauses data_axioms def_axioms)
+                 putStrLn $ tptp
 
         Just stmts -> forM_ stmts $ \stmt@(Statement{..}) -> do
              let (tr_contract,msgs_tr_contr) = runHaltM halt_env (trStatement stmt)
              flagged "-dbtrcontr" (printMsgs msgs_tr_contr)
              print statement_name
-             putStrLn $ linTPTP (varStyle cnf) tr_contract
-             endl
-             putStrLn $ linTPTP (axStyle cnf) data_axioms
-             endl
-             putStrLn $ linTPTP (varStyle cnf) def_axioms
-             endl
-             writeFile (show statement_name ++ ".tptp") $
-                  linTPTP (axStyle cnf) data_axioms ++ "\n" ++
-                  linTPTP (varStyle cnf) (def_axioms ++ tr_contract) ++ "\n"
+             let tptp = linTPTP (strStyle cnf)
+                                (renameClauses data_axioms
+                                               (def_axioms ++ tr_contract))
+             putStrLn $ tptp
+             writeFile (show statement_name ++ ".tptp") tptp
 

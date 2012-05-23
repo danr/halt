@@ -7,6 +7,8 @@ import Name
 import Id
 import Outputable
 
+import Halt.Common
+
 import Halt.FOL.Internals.Internals
 import Halt.FOL.Operations
 import Halt.FOL.Abstract
@@ -22,14 +24,17 @@ import Data.Data
 import Data.Char
 import Data.Maybe
 
-renameClauses :: [VarClause] -> [AxClause] -> [StrClause]
-renameClauses var_clauses ax_clauses =
+renameClauses :: [AxClause] -> [VarClause] -> [StrClause]
+renameClauses ax_clauses var_clauses =
     let renameFuns :: Clause q Var -> Clause q String
-        renameFuns = mkFunRenamer (map WrapClause var_clauses ++
-                                   map WrapClause ax_clauses)
+        renameFuns = mkFunRenamer (map WrapClause ax_clauses ++
+                                   map WrapClause var_clauses)
 
+        ax_clauses' = map (renameQVar suggest) (map renameFuns ax_clauses)
+          where
+            suggest _ = [ 'X':show i | i <- [(0 :: Int)..] ]
 
-        var_clauses' = map (renameQVar suggest) . map renameFuns
+        var_clauses' = map (renameQVar suggest) (map renameFuns var_clauses)
           where
             suggest :: Var -> [String]
             suggest v = [ case s of
@@ -40,11 +45,7 @@ renameClauses var_clauses ax_clauses =
                         | i <- [(0 :: Int)..]
                         ]
 
-        ax_clauses' = map (renameQVar suggest) . map renameFuns
-          where
-            suggest _ = [ 'X':show i | i <- [(0 :: Int)..] ]
-
-     in  var_clauses' ++ ax_clauses'
+     in  ax_clauses' ++ var_clauses'
 
 data WrappedVarClause
   = forall q . (Data q,Data (Clause q Var)) => WrapClause (Clause q Var)
@@ -52,7 +53,7 @@ data WrappedVarClause
 mkFunRenamer :: [WrappedVarClause] -> Clause q Var -> Clause q String
 mkFunRenamer clauses =
     let symbols :: [Var]
-        symbols = concatMap (\(WrapClause cl) -> allSymbols cl) clauses
+        symbols = nubOrd $ concatMap (\(WrapClause cl) -> allSymbols cl) clauses
 
         rep_map :: Map Var String
         rep_map = B.toMap (foldr (allot varSuggest protectedWiredIn)
@@ -105,19 +106,15 @@ varSuggest var = candidates
     name :: Name
     name = idName var
 
-    vars :: [Name]
-    vars = [ localiseName name | not (isSystemName name) ] ++ [ name ]
-
     strs :: [String]
-    strs = map (toTPTPid . showSDoc . ppr) vars
-
-    fallback :: String
-    fallback = last strs
+    strs = map (toTPTPid . showSDoc)
+               [ppr (nameOccName name),ppr name]
 
     candidates :: [String]
-    candidates = strs ++ [ fallback ++ "_" ++ show x | x <- [(0 :: Int)..] ]
+    candidates = strs ++ [ s ++ "_" ++ show x | s <- strs , x <- [(0 :: Int)..]]
 
 
+toTPTPid :: String -> String
 toTPTPid s | Just x <- M.lookup s prelude = x
            | otherwise                    = escape (lower s)
 
@@ -128,7 +125,7 @@ lower :: String -> String
 lower = map toLower
 
 protectedWiredIn :: Set String
-protectedWiredIn = S.fromList ["app","min","cf"]
+protectedWiredIn = S.fromList ["app","min","cf","bad","unr"]
 
 escapes :: Map Char String
 escapes = M.fromList
@@ -144,7 +141,7 @@ escapes = M.fromList
     , ('<' ,"less")
     , ('=' ,"equals")
     , ('>' ,"greater")
-    , ('?' ,"quest")
+    , ('?' ,"qmark")
     , ('\\',"bslash")
     , ('^' ,"hat")
     , ('|' ,"pipe")
@@ -152,8 +149,15 @@ escapes = M.fromList
     , ('-' ,"minus")
     , ('~' ,"tilde")
     , ('@' ,"at")
-    ]
 
+    , ('{' ,"rb")
+    , ('}' ,"lb")
+    , ('[' ,"rbr")
+    , (']' ,"lbr")
+    , ('(' ,"rp")
+    , (')' ,"lp")
+    , (',' ,"comma")
+    ]
 
 prelude :: Map String String
 prelude = M.fromList
