@@ -1,6 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables, ParallelListComp,
-             RankNTypes, ExistentialQuantification,
-             ImpredicativeTypes, FlexibleContexts #-}
+             ExistentialQuantification, FlexibleContexts #-}
 module Halt.FOL.Rename where
 
 import Var
@@ -23,32 +22,37 @@ import Data.Data
 import Data.Char
 import Data.Maybe
 
--- renameVarClauses :: [VarClause] -> [StrClause]
--- renameVarClauses = map (renameQVar suggest) . renameFuns
---   where
---     suggest :: Var -> [String]
---     suggest v = [ case s of
---                     x:xs | isAlpha x -> toUpper x:xs
---                          | otherwise -> 'Q':s
---                     []   -> 'Q':show i
---                 | s <- varSuggest v
---                 | i <- [(0 :: Int)..]
---                 ]
---
--- renameAxClauses :: [AxClause] -> [StrClause]
--- renameAxClauses = map (renameQVar suggest) . renameFuns
---   where
---     suggest _ = [ 'X':show i | i <- [(0 :: Int)..] ]
+renameClauses :: [VarClause] -> [AxClause] -> [StrClause]
+renameClauses var_clauses ax_clauses =
+    let renameFuns :: Clause q Var -> Clause q String
+        renameFuns = mkFunRenamer (map WrapClause var_clauses ++
+                                   map WrapClause ax_clauses)
 
-mkFunRenamer :: forall q . Data q =>
-                [forall q' . (Data q',Data (Clause q' Var)) => Clause q' Var] ->
-                Clause q Var -> Clause q String
+
+        var_clauses' = map (renameQVar suggest) . map renameFuns
+          where
+            suggest :: Var -> [String]
+            suggest v = [ case s of
+                            x:xs | isAlpha x -> toUpper x:xs
+                                 | otherwise -> 'Q':s
+                            []   -> 'Q':show i
+                        | s <- varSuggest v
+                        | i <- [(0 :: Int)..]
+                        ]
+
+        ax_clauses' = map (renameQVar suggest) . map renameFuns
+          where
+            suggest _ = [ 'X':show i | i <- [(0 :: Int)..] ]
+
+     in  var_clauses' ++ ax_clauses'
+
+data WrappedVarClause
+  = forall q . (Data q,Data (Clause q Var)) => WrapClause (Clause q Var)
+
+mkFunRenamer :: [WrappedVarClause] -> Clause q Var -> Clause q String
 mkFunRenamer clauses =
-
--- renameFuns :: Data q => [Clause q Var] -> [Clause q String]
--- renameFuns clauses =
     let symbols :: [Var]
-        symbols = concatMap allSymbols clauses
+        symbols = concatMap (\(WrapClause cl) -> allSymbols cl) clauses
 
         rep_map :: Map Var String
         rep_map = B.toMap (foldr (allot varSuggest protectedWiredIn)
