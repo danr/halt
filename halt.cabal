@@ -7,11 +7,11 @@ category:           Proving
 stability:          Experimental
 cabal-version:      >= 1.6
 build-type:         Simple
-homepage:           github.com/danr/hip
+homepage:           github.com/danr/halt
 
 executable          halt
-    ghc-options:    -threaded -O2 -rtsopts -package ghc
---    hs-source-dirs: src
+    ghc-options:    -O -package ghc
+    hs-source-dirs: src
     main-is:        Main.hs
 
     build-depends: base                          >= 4    && < 5

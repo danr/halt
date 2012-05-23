@@ -2,56 +2,34 @@
 {-# LANGUAGE ParallelListComp, RecordWildCards, NamedFieldPuns #-}
 module Halt.Trans(translate) where
 
-import BasicTypes
 import CoreSubst
 import CoreSyn
 import CoreUtils
 import DataCon
-import FastString
 import Id
-import Literal
 import Outputable
 import TyCon
-import TysWiredIn
-import Unique
-import UniqSupply
 
 import Halt.Names
-import Halt.Util
+import Halt.Common
+import Halt.Utils
 import Halt.Monad
 import Halt.Conf
 import Halt.Data
+import Halt.ExprTrans
+import Halt.Constraints
 
 import FOL.Syn hiding ((:==))
 
-import qualified Data.Map as M
-import Data.Char (toUpper,toLower,isAlpha)
-import Data.List (intercalate)
-
 import Control.Monad.Reader
-import Control.Monad.Writer
 
 -- | Takes a CoreProgram (= [CoreBind]) and makes FOL translation from it
 --   TODO: Register used function pointers
-translate :: UniqSupply -> HaltConf -> [TyCon] -> [CoreBind] -> ([FDecl],[String])
-translate us conf@(HaltConf{..}) ty_cons program =
+translate :: HaltEnv -> [TyCon] -> [CoreBind] -> ([FDecl],[String])
+translate env ty_cons program =
   let -- Remove the unnecessary SCC information
       binds :: [(Var,CoreExpr)]
       binds = flattenBinds program
-
-      names :: Names
-      names = fst (mkNames us)
-
-      ty_cons_with_builtin :: [TyCon]
-      ty_cons_with_builtin = listTyCon : boolTyCon : unitTyCon
-                           : map (tupleTyCon BoxedTuple) [2..4]
-                             -- ^ choice: only tuples up to 4 supported
-                           ++ ty_cons
-
-      -- Arity of each function (Arities from other modules are also needed)
-      arities :: ArityMap
-      arities = M.fromList $ [ (idName v,exprArity e) | (v,e) <- binds ]
-                          ++ dataArities ty_cons_with_builtin
 
       -- Translate each declaration
       -- TODO : Make these return Decl?
@@ -60,15 +38,14 @@ translate us conf@(HaltConf{..}) ty_cons program =
 
       formulae :: [Formula]
       msgs :: [String]
-      (formulae,msgs) = runWriter (runHaltM translated `runReaderT`
-                                            initEnv names conf arities)
+      (formulae,msgs) = runHaltM env translated
 
-  in  (mkProjs conf ty_cons_with_builtin ++
-       mkDiscrim conf ty_cons_with_builtin ++
-       [ FDecl (if use_cnf then CNF else Axiom) (show n) phi
+  in  (mkProjs (conf env) ty_cons ++
+       mkDiscrim (conf env) ty_cons ++
+       [ FDecl (if (use_cnf (conf env)) then CNF else Axiom) (show n) phi
        | phi <- formulae
        | n <- [(0 :: Int)..]]
-      ,msgs ++ [ showSDoc (ppr k) ++ "(" ++ show (getUnique k) ++ "):" ++ show v | (k,v) <- M.toList arities])
+      ,msgs ++ showArityMap (arities env))
 
 -- | Translate a CoreDecl or a Let
 trDecl :: Var -> CoreExpr -> HaltM [Formula]
@@ -82,11 +59,6 @@ trDecl f e = do
     e' :: CoreExpr
     (_ty,as,e') = collectTyAndValBinders e
     -- Dangerous? Type variables are skipped for now.
-
--- | The arity of an expression if it is a lambda
-exprArity :: CoreExpr -> Int
-exprArity e = length as
-  where (_,as,_) = collectTyAndValBinders e
 
 -- | Translate a case expression
 trCase :: CoreExpr -> HaltM [Formula]
@@ -244,9 +216,9 @@ trAlt scrut_exp (con, bound, e) = do
 --   The input must be a case expression!
 addBottomCase :: CoreExpr -> HaltM CoreExpr
 addBottomCase (Case scrutinee binder ty alts) = do
-    bottomCon <- getConOf Bottom
-    bottomVar <- Var <$> getIdOf Bottom
-    let -- _|_ -> _|_
+    let bottomCon = constantCon Bottom
+        bottomVar = Var (constantId Bottom)
+         -- _|_ -> _|_
         -- Breaks the core structure by having a new data constructor
         bottomAlt :: CoreAlt
         bottomAlt = (DataAlt bottomCon, [], bottomVar)
@@ -260,73 +232,4 @@ addBottomCase (Case scrutinee binder ty alts) = do
          (as,Nothing)  -> defaultBottomAlt:as
 addBottomCase _ = error "addBottomCase on non-case expression"
 
--- | Translate expressions, i.e. not case (nor let/lambda)
-trExpr :: CoreExpr -> HaltM Term
-trExpr e = do
-    HaltEnv{..} <- ask
-    let isFunction x = case M.lookup (idName x) arities of
-                          Just i  -> i > 0
-                          Nothing -> False
-    case e of
-        Var x | x `elem` quant -> return (mkVar x)
-              | isFunction x   -> return (mkPtr x)
-              | otherwise      -> return (mkFun x [])
-        App{} -> do
-          write $ "App on " ++ showExpr e
-          case second trimTyArgs (collectArgs e) of
-            (Var x,es)
-               | Just i <- M.lookup (idName x) arities -> do
-                   write $ idToStr x ++ " has arity " ++ show i
-                   if i > length es
-                       then foldFunApps (mkPtr x) <$> mapM trExpr es
-                       else do
-                           let (es_inner,es_after) = splitAt i es
-                           inner <- mkFun x <$> mapM trExpr es_inner
-                           foldFunApps inner <$> mapM trExpr es_after
-            (f,es) -> do
-               write $ "Collected to " ++ showExpr f
-                           ++ concat [ "(" ++ show (getUnique (idName x)) ++ ") " | let Var x = f ]
-                           ++ " on " ++ intercalate "," (map showExpr es)
-               foldFunApps <$> trExpr f <*> mapM trExpr es
-        Lit (MachStr s) -> do
-          write $ "String to constant: " ++ unpackFS s
-          return $ Fun (FunName "string") [Fun (FunName (unpackFS s)) []]
-
-        Case{}      -> trErr "case" -- trCaseExpr e
-        Let{}       -> trErr "let"  -- trLet bind e'
-        Cast e' _   -> do
-          write $ "Ignoring cast: " ++ showExpr e
-          trExpr e'
-
-        Lit{}      -> trErr "literals"
-        Type{}     -> trErr "types"
-        Lam{}      -> trErr "lambdas"
-        Coercion{} -> trErr "coercions"
-        Tick{}     -> trErr "ticks"
-  where trErr s = error ("trExpr: no support for " ++ s ++ "\n" ++ showExpr e)
-
-trimTyArgs :: [CoreArg] -> [CoreArg]
-trimTyArgs = filter (not . isTyArg)
-  where
-    isTyArg Type{} = True
-    isTyArg _      = False
-
-foldFunApps :: Term -> [Term] -> Term
-foldFunApps = foldl (\x y -> Fun (FunName "app") [x,y])
-
-
-mkPtr :: Var -> Term
-mkPtr = (`Fun` []) . FunName . (++ "ptr") . map toLower . idToStr
-
-mkVarName :: Var -> VarName
-mkVarName = VarName . capInit . idToStr
-  where
-    capInit (x:xs) | isAlpha x = toUpper x : xs
-                   | otherwise = 'Q':x:xs
-                        -- ^ needs escaping here
-                        --   example: (>) as an argument to a sortBy function
-    capInit "" = "Q"
-
-mkVar :: Var -> Term
-mkVar = FVar . mkVarName
 

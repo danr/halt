@@ -1,19 +1,23 @@
 {-# LANGUAGE NamedFieldPuns,
              GeneralizedNewtypeDeriving,
-             FlexibleContexts
+             FlexibleContexts,
+             RecordWildCards
   #-}
 module Halt.Monad where
 
 import CoreSubst
 import CoreSyn
-import DataCon
+import Id
 import Name
 import Outputable
-import Var
+import TyCon
+import Unique
 
-import Halt.Util (showExpr)
+import Halt.Common
 import Halt.Conf
-import Halt.Names
+import Halt.Constraints
+import Halt.Data
+import Halt.Utils
 
 import qualified Data.Map as M
 import Data.Map (Map)
@@ -21,10 +25,14 @@ import Data.List (delete,union)
 
 import Control.Monad.Reader
 import Control.Monad.Writer
-import Control.Applicative
 
 -- Map associating each function/CAF with its arity
 type ArityMap = Map Name Int
+
+showArityMap :: ArityMap -> [String]
+showArityMap m =
+    [ showSDoc (ppr k) ++ "(" ++ show (getUnique k) ++ "):" ++ show v
+    | (k,v) <- M.toList m ]
 
 -- The Environment
 data HaltEnv
@@ -40,8 +48,6 @@ data HaltEnv
               -- ^ Constraints
               , conf     :: HaltConf
               -- ^ Configuration
-              , names    :: Names
-              -- ^ Names of constants UNR/BAD/Bottom
               }
 
 -- Pushes new quantified variables to the environment
@@ -64,38 +70,31 @@ pushConstraints cs env = env { constr = cs ++ constr env }
 extendArities :: ArityMap -> HaltEnv -> HaltEnv
 extendArities am env = env { arities = am `M.union` arities env }
 
--- Constraints from case expressions to results, under a substitution
-data Constraint = Equality   CoreExpr DataCon [CoreExpr]
-                | Inequality CoreExpr DataCon
+-- | Make the environment
+mkEnv :: HaltConf -> [TyCon] -> [CoreBind] -> HaltEnv
+mkEnv conf@(HaltConf{..}) ty_cons program =
+  let -- Remove the unnecessary SCC information
+      binds :: [(Var,CoreExpr)]
+      binds = flattenBinds program
 
-instance Show Constraint where
-  show (Equality   e _dc _bs) = showExpr e ++ " == fix constraint show instance" -- ++ show p
-  show (Inequality e _dc)     = showExpr e ++ " /= fix constraint show instance" -- ++ show p
+      -- Arity of each function (Arities from other modules are also needed)
+      arities :: ArityMap
+      arities = M.fromList $ [ (idName v,exprArity e) | (v,e) <- binds ]
+                             ++ dataArities ty_cons
 
-substConstr :: Subst -> Constraint -> Constraint
-substConstr s (Equality e dc bs) = Equality (substExpr (text "substConstr") s e) dc
-                                            (map (substExpr (text "substConstr") s) bs)
-substConstr s (Inequality e dc)  = Inequality (substExpr (text "substConstr") s e) dc
+  in HaltEnv { arities = arities
+             , fun     = error "initEnv: fun"
+             , args    = []
+             , quant   = []
+             , constr  = noConstraints
+             , conf    = conf
+             }
 
--- | The empty constraints
-noConstraints :: [Constraint]
-noConstraints = []
-
--- | The initial environment
-initEnv :: Names -> HaltConf -> ArityMap -> HaltEnv
-initEnv names conf am
-    = HaltEnv { arities = am
-              , fun     = error "initEnv: fun"
-              , args    = []
-              , quant   = []
-              , constr  = noConstraints
-              , conf    = conf
-              , names   = names
-              }
+runHaltM :: HaltEnv -> HaltM a -> (a,[String])
+runHaltM env (HaltM m) = runWriter (m `runReaderT` env)
 
 -- | The translation monad
-newtype HaltM a
-    = HaltM { runHaltM :: ReaderT HaltEnv (Writer [String]) a }
+newtype HaltM a = HaltM (ReaderT HaltEnv (Writer [String]) a)
   deriving (Applicative,Monad,Functor
            ,MonadReader HaltEnv
            ,MonadWriter [String])
@@ -109,12 +108,3 @@ substContext s env = env
 -- | Write a debug message
 write :: MonadWriter [String] m => String -> m ()
 write = tell . return
-
-getNameOf :: NamedConstant -> HaltM Name
-getNameOf nt = namedName nt <$> asks names
-
-getIdOf :: NamedConstant -> HaltM Id
-getIdOf nt = namedId nt <$> asks names
-
-getConOf :: NamedConstant -> HaltM DataCon
-getConOf nt = namedCon nt <$> asks names
