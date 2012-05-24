@@ -1,21 +1,57 @@
-name:               halt
-version:            0.1
-author:             Dan Rosén
-maintainer:         danr@student.gu.se
-synopsis:           Haskell to Logic Translator - fuelled by GHC Core
-category:           Proving
-stability:          Experimental
-cabal-version:      >= 1.6
-build-type:         Simple
-homepage:           github.com/danr/halt
+name:                    halt
+version:                 0.1
+author:                  Dan Rosén
+maintainer:              danr@student.gu.se
+synopsis:                Haskell to Logic Translator - fuelled by GHC Core
+category:                Proving
+stability:               Experimental
+cabal-version:           >= 1.6
+build-type:              Simple
+homepage:                github.com/danr/halt
 
-executable          halt
-    ghc-options:    -O -package ghc
-    hs-source-dirs: src
-    main-is:        Main.hs
+library
+    ghc-options:         -O -package ghc
+    hs-source-dirs:      src
 
-    build-depends: base                          >= 4    && < 5
-                 , mtl                           >= 2.0
-                 , ghc-paths                     >= 0.1
-                 , containers                    >= 0.3
+    exposed-modules:
+        Halt.Conf
+        Halt.ExprTrans
+        Halt.Lift
+        Halt.Monad
+        Halt.PrimCon
+        Halt.Trans
+        Halt.FOL.Abstract
+        Halt.FOL.Linearise
+        Halt.FOL.Operations
+        Halt.FOL.Rename
+        Halt.FOL.Style
+
+    other-modules:
+        Halt.Case
+        Halt.Common
+        Halt.Constraints
+        Halt.Data
+        Halt.Utils
+        Halt.FOL.Internals.Internals
+
+    build-depends:
+        base               >= 4    && < 5,
+        mtl                >= 2.0,
+        ghc-paths          >= 0.1,
+        containers         >= 0.3,
+        bimap,
+        uniplate
+
+executable               halt
+    ghc-options:         -O -package ghc
+    hs-source-dirs:      src
+    main-is:             Main.hs
+
+    build-depends:
+        base               >= 4    && < 5,
+        mtl                >= 2.0,
+        ghc-paths          >= 0.1,
+        containers         >= 0.3,
+        bimap,
+        uniplate
 
