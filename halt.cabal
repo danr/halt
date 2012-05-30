@@ -14,6 +14,7 @@ library
     hs-source-dirs:      src
 
     exposed-modules:
+        Halt.Entry
         Halt.Conf
         Halt.ExprTrans
         Halt.Lift
@@ -25,13 +26,13 @@ library
         Halt.FOL.Operations
         Halt.FOL.Rename
         Halt.FOL.Style
+        Halt.Utils
 
     other-modules:
         Halt.Case
         Halt.Common
         Halt.Constraints
         Halt.Data
-        Halt.Utils
         Halt.FOL.Internals.Internals
 
     build-depends:
@@ -39,7 +40,8 @@ library
         mtl                >= 2.0,
         ghc-paths          >= 0.1,
         containers         >= 0.3,
-        bimap,
+        bimap              >= 0.2.2,
+        filepath           >= 1.0,
         uniplate
 
 executable               halt
@@ -52,6 +54,7 @@ executable               halt
         mtl                >= 2.0,
         ghc-paths          >= 0.1,
         containers         >= 0.3,
-        bimap,
+        bimap              >= 0.2.2,
+        filepath           >= 1.0,
         uniplate
 

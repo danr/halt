@@ -105,10 +105,8 @@ main = do
 
         halt_conf :: HaltConf
         halt_conf  = sanitizeConf $ HaltConf
-                        { use_cnf      = cnf
-                        , inline_projs = True
-                        , use_min      = "-no-min" `notElem` opts
-                        , common_min   = "-common-min" `elem` opts
+                        { use_min      = "-no-min" `notElem` opts
+                        , use_cf       = True
                         , unr_and_bad  = True
                         }
 
