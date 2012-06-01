@@ -6,18 +6,13 @@ module Main where
 -- ghc -package ghc Main.hs
 
 import BasicTypes
-import CoreMonad
-import CoreSubst (simpleOptExpr)
-import CoreSyn
-import DynFlags
-import FloatOut
 import GHC
-import GHC.Paths
 import HscTypes
 import TysWiredIn
 import Outputable
 import UniqSupply
 
+import Halt.Subtheory
 import Halt.Trans
 import Halt.Lift
 import Halt.Conf
@@ -25,6 +20,7 @@ import Halt.Monad
 import Halt.FOL.Linearise
 import Halt.FOL.Style
 import Halt.FOL.Rename
+import Halt.Entry
 
 import Contracts.Make
 import Contracts.Trans
@@ -34,47 +30,14 @@ import Control.Monad
 import System.Environment
 import System.Exit
 
-desugar :: Bool -> FilePath -> IO (ModGuts,DynFlags)
-desugar debug_float_out targetFile =
-  defaultErrorHandler defaultLogAction $
-    {- defaultCleanupHandler defaultDynFlags $ -} do
-      runGhc (Just libdir) $ do
-        dflags <- getSessionDynFlags
-        let dflags'
-              | debug_float_out = foldl dopt_set dflags [Opt_D_dump_simpl_stats
-                                                        ,Opt_D_verbose_core2core]
-              | otherwise = dflags
-
-        void $ setSessionDynFlags dflags'
-        target <- guessTarget targetFile Nothing
-        setTargets [target]
-        void $ load LoadAllTargets
-        modSum <- getModSummary (mkModuleName targetFile)
-        p <- parseModule modSum
-        t <- typecheckModule p
-        d <- desugarModule t
-        let modguts = dm_core_module d
-        return (modguts,dflags')
-
-lambdaLift :: DynFlags -> CoreProgram -> IO CoreProgram
-lambdaLift dflags program = do
-    us <- mkSplitUniqSupply 'l'
-    floatOutwards float_switches dflags us (map simpleOpt program)
-  where
-    simpleOpt (NonRec v e) = NonRec v (simpleOptExpr e)
-    simpleOpt (Rec vses)   = Rec [ (v,simpleOptExpr e) | (v,e) <- vses ]
-
-    float_switches = FloatOutSwitches
-                      { floatOutLambdas = Just 100
-                      , floatOutConstants = False
-                      , floatOutPartialApplications = True
-                      }
-
 main :: IO ()
 main = do
     file:opts <- getArgs
     let flagged x = when (x `elem` opts)
-    (modguts,dflags) <- desugar ("-debug-float-out" `elem` opts) file
+        dsconf    = DesugarConf { debug_float_out = "-debug-float-out" `elem` opts
+                                , core2core_pass  = False
+                                }
+    (modguts,dflags) <- desugar dsconf file
     let core_binds = mg_binds modguts
 
     (program,m_stmts) <-
@@ -114,7 +77,7 @@ main = do
 
         halt_env = mkEnv halt_conf ty_cons_with_builtin lifted_prog
 
-        (data_axioms,def_axioms,msgs_trans)
+        (subtheories,msgs_trans)
             = translate halt_env ty_cons_with_builtin lifted_prog
 
         printSrc = do
@@ -147,16 +110,16 @@ main = do
         Nothing -> do
              unless ("-no-tptp" `elem` opts) $ do
                  let tptp = linTPTP (strStyle cnf)
-                                    (renameClauses data_axioms def_axioms)
-                 putStrLn $ tptp
+                                    (renameClauses (concatMap toClauses subtheories))
+                 putStrLn tptp
 
         Just stmts -> forM_ stmts $ \stmt@(Statement{..}) -> do
              let (tr_contract,msgs_tr_contr) = runHaltM halt_env (trStatement stmt)
              flagged "-dbtrcontr" (printMsgs msgs_tr_contr)
              print statement_name
              let tptp = linTPTP (strStyle cnf)
-                                (renameClauses data_axioms
-                                               (def_axioms ++ tr_contract))
-             putStrLn $ tptp
+                                (renameClauses $ concatMap toClauses (subtheories)
+                                                 ++ tr_contract)
+             putStrLn tptp
              writeFile (show statement_name ++ ".tptp") tptp
 
