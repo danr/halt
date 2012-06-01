@@ -20,6 +20,7 @@ import Halt.Monad
 import Halt.FOL.Linearise
 import Halt.FOL.Style
 import Halt.FOL.Rename
+import Halt.Trim
 import Halt.Entry
 
 import Contracts.Make
@@ -114,11 +115,12 @@ main = do
                  putStrLn tptp
 
         Just stmts -> forM_ stmts $ \stmt@(Statement{..}) -> do
-             let (tr_contract,msgs_tr_contr) = runHaltM halt_env (trStatement stmt)
+             let ((tr_contract,deps),msgs_tr_contr) = runHaltM halt_env (trStatement stmt)
              flagged "-dbtrcontr" (printMsgs msgs_tr_contr)
              print statement_name
-             let tptp = linTPTP (strStyle cnf)
-                                (renameClauses $ concatMap toClauses (subtheories)
+             let subtheories' = trim deps subtheories
+                 tptp = linTPTP (strStyle cnf)
+                                (renameClauses $ concatMap toClauses subtheories'
                                                  ++ tr_contract)
              putStrLn tptp
              writeFile (show statement_name ++ ".tptp") tptp
